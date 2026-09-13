@@ -2,17 +2,17 @@ use std::convert::TryFrom;
 use std::iter;
 use std::{borrow::Cow, vec::IntoIter};
 
-use crate::{doc_comment_from, BuildMethod};
+use crate::{BuildMethod, doc_comment_from};
 
 use darling::util::{Flag, PathList, SpannedValue};
 use darling::{Error, FromMeta};
 use proc_macro2::Span;
 use quote::ToTokens;
-use syn::{spanned::Spanned, Attribute, Generics, Ident, Meta, Path};
+use syn::{Attribute, Generics, Ident, Meta, Path, spanned::Spanned};
 
 use crate::{
-    BlockContents, Builder, BuilderField, BuilderFieldType, BuilderPattern, DefaultExpression,
-    Each, FieldConversion, Initializer, Setter,
+    BlockContents, Builder, BuilderField, BuilderFieldType, BuilderPattern, DefaultExpression, Each, FieldConversion,
+    Initializer, Setter,
 };
 
 #[derive(Debug, Clone)]
@@ -29,9 +29,7 @@ enum VisibilityAttr {
 impl VisibilityAttr {
     pub fn to_explicit_visibility(&self) -> Option<Cow<'_, syn::Visibility>> {
         match self {
-            Self::Public(span) => Some(Cow::Owned(syn::Visibility::Public(
-                parse_quote_spanned!(*span=> pub),
-            ))),
+            Self::Public(span) => Some(Cow::Owned(syn::Visibility::Public(parse_quote_spanned!(*span=> pub)))),
             Self::Private => Some(Cow::Owned(syn::Visibility::Inherited)),
             Self::Explicit(v) => Some(Cow::Borrowed(v)),
             Self::None => None,
@@ -64,16 +62,12 @@ impl FromMeta for VisibilityAttr {
 
         if public.is_present() {
             if private.is_present() {
-                conflicts.push(
-                    Error::custom("`public` and `private` cannot be used together")
-                        .with_span(&private.span()),
-                );
+                conflicts
+                    .push(Error::custom("`public` and `private` cannot be used together").with_span(&private.span()));
             }
 
             if let Some(vis) = explicit {
-                conflicts.push(
-                    Error::custom("`public` and `vis` cannot be used together").with_span(&vis),
-                );
+                conflicts.push(Error::custom("`public` and `vis` cannot be used together").with_span(&vis));
             }
 
             conflicts.finish_with(Self::Public(public.span()))
@@ -185,10 +179,8 @@ impl BuildFn {
             if let Some(BuildFnError::Generated(e)) = &self.error {
                 if !*e.validation_error {
                     acc.push(
-                        Error::custom(
-                            "Cannot set `error(validation_error = false)` when using `validate`",
-                        )
-                        .with_span(&e.validation_error.span()),
+                        Error::custom("Cannot set `error(validation_error = false)` when using `validate`")
+                            .with_span(&e.validation_error.span()),
                     )
                 }
             }
@@ -461,7 +453,7 @@ impl Field {
                     darling::Error::custom(
                         r#"#[builder(default)] and #[builder(field(ty="..."))] cannot be used together"#,
                     )
-                    .with_span(&field_default.span())
+                    .with_span(&field_default.span()),
                 )
             }
         };
@@ -496,9 +488,7 @@ fn distribute_and_unnest_attrs(
     }
 
     for attr in input.drain(..) {
-        let destination = outputs
-            .iter_mut()
-            .find(|(ptattr, _)| attr.path().is_ident(ptattr));
+        let destination = outputs.iter_mut().find(|(ptattr, _)| attr.path().is_ident(ptattr));
 
         if let Some((_, destination)) = destination {
             match unnest_from_one_attribute(attr) {
@@ -550,7 +540,22 @@ fn unnest_from_one_attribute(attr: syn::Attribute) -> darling::Result<Attribute>
 }
 
 fn default_crate_root() -> Path {
-    parse_quote!(::derive_builder)
+    // Modified.
+
+    // Check if user depends on hicore
+    let should_fake_original = match proc_macro_crate::crate_name("hicore") {
+        Err(_) | Ok(proc_macro_crate::FoundCrate::Itself) => true,
+        Ok(proc_macro_crate::FoundCrate::Name(name)) => {
+            debug_assert_eq!(&name, "hicore");
+            false
+        }
+    };
+
+    if should_fake_original {
+        parse_quote!(::derive_builder)
+    } else {
+        parse_quote!(::hicore::derive_builder)
+    }
 }
 
 fn default_create_empty() -> Ident {
@@ -725,11 +730,7 @@ impl Options {
     }
 
     pub fn raw_fields(&self) -> Vec<&Field> {
-        self.data
-            .as_ref()
-            .take_struct()
-            .expect("Only structs supported")
-            .fields
+        self.data.as_ref().take_struct().expect("Only structs supported").fields
     }
 
     /// A builder requires `Clone` to be derived if its build method or any of its setters
@@ -807,10 +808,7 @@ impl Options {
             target_ty: &self.ident,
             target_ty_generics: Some(ty_generics),
             error_ty: self.builder_error_ident(),
-            initializers: self
-                .fields()
-                .map(|f| f.as_initializer().into_token_stream())
-                .collect(),
+            initializers: self.fields().map(|f| f.as_initializer().into_token_stream()).collect(),
             doc_comment: Some(doc_comment_from(format!(
                 include_str!("doc_tpl/builder_method.md"),
                 struct_name = self.ident
@@ -857,11 +855,7 @@ impl<'a> FieldWithDefaults<'a> {
     /// Get the prefix that should be applied to the field name to produce
     /// the setter ident, if any.
     pub fn setter_prefix(&self) -> Option<&Ident> {
-        self.field
-            .setter
-            .prefix
-            .as_ref()
-            .or(self.parent.setter.prefix.as_ref())
+        self.field.setter.prefix.as_ref().or(self.parent.setter.prefix.as_ref())
     }
 
     /// Get the ident of the emitted setter method
@@ -882,11 +876,7 @@ impl<'a> FieldWithDefaults<'a> {
     /// Checks if the emitted setter should be generic over types that impl
     /// `Into<FieldType>`.
     pub fn setter_into(&self) -> bool {
-        self.field
-            .setter
-            .into
-            .or(self.parent.setter.into)
-            .unwrap_or_default()
+        self.field.setter.into.or(self.parent.setter.into).unwrap_or_default()
     }
 
     /// Checks if the emitted setter should strip the wrapper Option over types that impl
@@ -911,10 +901,7 @@ impl<'a> FieldWithDefaults<'a> {
     /// Get the ident of the input field. This is also used as the ident of the
     /// emitted field.
     pub fn field_ident(&self) -> &syn::Ident {
-        self.field
-            .ident
-            .as_ref()
-            .expect("Tuple structs are not supported")
+        self.field.ident.as_ref().expect("Tuple structs are not supported")
     }
 
     pub fn field_vis(&self) -> Cow<'_, syn::Visibility> {
@@ -995,11 +982,9 @@ impl<'a> FieldWithDefaults<'a> {
             default_value: self.field.default.as_ref(),
             use_default_struct: self.use_parent_default(),
             conversion: self.conversion(),
-            custom_error_type_span: self.parent.build_fn.error.as_ref().and_then(|err_ty| {
-                match err_ty {
-                    BuildFnError::Existing(p) => Some(p.span()),
-                    _ => None,
-                }
+            custom_error_type_span: self.parent.build_fn.error.as_ref().and_then(|err_ty| match err_ty {
+                BuildFnError::Existing(p) => Some(p.span()),
+                _ => None,
             }),
         }
     }
@@ -1021,9 +1006,6 @@ impl<'a> Iterator for FieldIter<'a> {
     type Item = FieldWithDefaults<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.1.next().map(|field| FieldWithDefaults {
-            parent: self.0,
-            field,
-        })
+        self.1.next().map(|field| FieldWithDefaults { parent: self.0, field })
     }
 }
